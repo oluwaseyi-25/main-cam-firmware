@@ -160,7 +160,7 @@ bool loadConfig()
 
   Serial.println("JSON parsed successfully.");
   ssid = (const char *)json["ssid"];
-  password = (const char *)json["password"];
+  password = (const char *)json["pwd"];
   Serial.printf("SSID: %s", ssid.c_str());
   Serial.printf("\t Password: %s\n", password.c_str());
   return true;
