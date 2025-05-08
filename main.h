@@ -77,8 +77,8 @@ typedef CMD_RESPONSE (*OpPtr)(CMD_INPUT);
 // Global Variables
 // ==========================
 
-String ssid;
-String password;
+String ssid, password, ws_ip, ws_route;
+unsigned int ws_port;
 
 // ==========================
 // Function Prototypes

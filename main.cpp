@@ -26,24 +26,27 @@ void setup()
   if (!loadConfig())
   {
     LOG_ERR("Failed to load configuration. Using default values.");
-    ssid = "wifi_ssid";
-    password = "password";
+    ssid = "MTN_4G_48437C";
+    password = "Pelumi0209";
+    ws_ip = "192.168.0.200";
+    ws_port = 5000;
+    ws_route = "/command";
   }
 
   if (connect_to_network())
     LOGF("Connected to WiFi. IP address: %s\n", WiFi.localIP().toString().c_str());
 
+  pinMode(LED_GPIO_NUM, OUTPUT);
+  analogWrite(LED_GPIO_NUM, 50); // Turn off the LED initially
+  delay(250);
+  analogWrite(LED_GPIO_NUM, 0); // Turn on the LED to indicate that the setup is complete
+
   camera_init();
 
-  webSocket.begin("192.168.0.200", 5000, "/command");
+  webSocket.begin(ws_ip.c_str(), ws_port, ws_route.c_str());
   webSocket.onEvent(webSocketEvent);
   webSocket.setReconnectInterval(5000);
   webSocket.enableHeartbeat(15000, 3000, 2); // Enable heartbeat with 15s ping interval, 3s pong timeout, and 2 disconnect attempts
-
-  pinMode(LED_GPIO_NUM, OUTPUT);
-  analogWrite(LED_GPIO_NUM, 100); // Turn off the LED initially
-  delay(500); // Wait for 1 second before starting the loop
-  analogWrite(LED_GPIO_NUM, 0); // Turn on the LED to indicate that the setup is complete
 }
 
 void loop()
@@ -159,11 +162,29 @@ bool loadConfig()
   }
 
   Serial.println("JSON parsed successfully.");
-  ssid = (const char *)json["ssid"];
-  password = (const char *)json["pwd"];
-  Serial.printf("SSID: %s", ssid.c_str());
-  Serial.printf("\t Password: %s\n", password.c_str());
-  return true;
+  if (json.hasOwnProperty("ssid") &&
+      json.hasOwnProperty("pwd") &&
+      json.hasOwnProperty("ws_ip") &&
+      json.hasOwnProperty("ws_port") &&
+      json.hasOwnProperty("ws_route"))
+  {
+    ssid = (const char *)json["ssid"];
+    password = (const char *)json["pwd"];
+    ws_ip = (const char *)json["ws_ip"];
+    ws_port = (unsigned int)json["ws_port"];
+    ws_route = (const char *)json["ws_route"];
+    Serial.printf("SSID: %s", ssid.c_str());
+    Serial.printf("\t Password: %s\n", password.c_str());
+    Serial.printf("WebSocket IP: %s", ws_ip.c_str());
+    Serial.printf("\t WebSocket Port: %d", ws_port);
+    Serial.printf("\t WebSocket Route: %s\n", ws_route.c_str());
+    return true;
+  }
+  else
+  {
+    Serial.println("Invalid configuration file format.");
+    return false;
+  }
 }
 
 /**
@@ -344,7 +365,7 @@ void camera_init()
   {
     // Limit the frame size when PSRAM is not available
     config.frame_size = FRAMESIZE;
-    config.fb_location = CAMERA_FB_IN_PSRAM;
+    config.fb_location = CAMERA_FB_IN_DRAM;
   }
 
   // camera init
@@ -358,7 +379,7 @@ void camera_init()
   sensor_t *s = esp_camera_sensor_get();
   if (s->id.PID == OV2640_PID)
   {
-    s->set_framesize(s, FRAMESIZE);     // Set frame size to SVGA
+    s->set_framesize(s, FRAMESIZE);          // Set frame size to SVGA
     s->set_quality(s, 10);                   // Set JPEG quality (lower is better quality)
     s->set_brightness(s, 0);                 // Set brightness (-2 to 2)
     s->set_contrast(s, 0);                   // Set contrast (-2 to 2)
@@ -396,6 +417,7 @@ void camera_init()
  */
 void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
 {
+  JSONVar payload_json;
   switch (type)
   {
   case WStype_DISCONNECTED:
@@ -407,6 +429,11 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
     break;
   case WStype_TEXT:
     Serial.printf("[WSc] get text: %s\n", payload);
+    payload_json = JSON.parse((const char *)payload);
+    if (JSON.typeof(payload_json) != "undefined")
+    {
+      Serial.println((const char *)payload);
+    }
     break;
   case WStype_ERROR:
     Serial.printf("[WSc] Error occurred!\n");
@@ -435,10 +462,17 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
 CMD_RESPONSE change_wifi(CMD_INPUT cmd_input)
 {
   CMD_RESPONSE ret = {"OK", "WiFi changed successfully"};
-  if (cmd_input.args.hasOwnProperty("ssid") && cmd_input.args.hasOwnProperty("pwd"))
+  if (cmd_input.args.hasOwnProperty("ssid") &&
+      cmd_input.args.hasOwnProperty("pwd") &&
+      cmd_input.args.hasOwnProperty("ws_ip") &&
+      cmd_input.args.hasOwnProperty("ws_port") &&
+      cmd_input.args.hasOwnProperty("ws_route"))
   {
     ssid = (const char *)cmd_input.args["ssid"];
     password = (const char *)cmd_input.args["pwd"];
+    ws_ip = (const char *)cmd_input.args["ws_ip"];
+    ws_port = (unsigned int)cmd_input.args["ws_port"];
+    ws_route = (const char *)cmd_input.args["ws_route"];
     if (!writeFile(SPIFFS, "/config.json", JSON.stringify(cmd_input.args).c_str()))
     {
       ret.status = "ERR";
@@ -452,6 +486,8 @@ CMD_RESPONSE change_wifi(CMD_INPUT cmd_input)
       ret.body = "Failed to connect to new WiFi network";
       return ret;
     }
+    webSocket.disconnect();
+    webSocket.begin(ws_ip.c_str(), ws_port, ws_route.c_str());
   }
   else
   {
@@ -473,14 +509,15 @@ CMD_RESPONSE change_wifi(CMD_INPUT cmd_input)
 CMD_RESPONSE take_photo(CMD_INPUT cmd_input)
 {
   CMD_RESPONSE ret = {"OK", "Photo taken successfully"};
-  #ifdef TEST_MODE
+#ifdef TEST_MODE
   analogWrite(LED_GPIO_NUM, 100);
-  delay(500); 
-  #endif
+  delay(500);
+#endif
   camera_fb_t *fb = esp_camera_fb_get();
-  #ifdef TEST_MODE
+#ifdef TEST_MODE
   analogWrite(LED_GPIO_NUM, 0);
-  #endif
+#endif
+
   if (!fb)
   {
     ret.status = "ERR";
@@ -491,7 +528,8 @@ CMD_RESPONSE take_photo(CMD_INPUT cmd_input)
   JSONVar imageMetadata;
   imageMetadata = cmd_input.args;
   // Send image metadata and content over websocket abd check for errors
-  if (!webSocket.sendTXT(JSON.stringify(imageMetadata).c_str()) || !webSocket.sendBIN(fb->buf, fb->len)) {
+  if (!webSocket.sendTXT(JSON.stringify(imageMetadata).c_str()) || !webSocket.sendBIN(fb->buf, fb->len))
+  {
     ret.status = "ERR";
     ret.body = "Failed to send image over websocket";
   }
