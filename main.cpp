@@ -36,11 +36,6 @@ void setup()
   if (connect_to_network())
     LOGF("Connected to WiFi. IP address: %s\n", WiFi.localIP().toString().c_str());
 
-  pinMode(LED_GPIO_NUM, OUTPUT);
-  analogWrite(LED_GPIO_NUM, 50); // Turn off the LED initially
-  delay(250);
-  analogWrite(LED_GPIO_NUM, 0); // Turn on the LED to indicate that the setup is complete
-
   camera_init();
 
   webSocket.begin(ws_ip.c_str(), ws_port, ws_route.c_str());
@@ -55,12 +50,12 @@ void loop()
   if (Serial.available())
   {
     String command = Serial.readStringUntil('\n');
-    Serial.printf("\nReceived command: %s\n", command.c_str());
+    LOGF("\nReceived command: %s\n", command.c_str());
     // Confirm if the command is a valid json string
     JSONVar json = JSON.parse(command);
     if (JSON.typeof(json) == "undefined")
     {
-      Serial.println("Parsing input failed!");
+      LOG_ERR("Parsing input failed!");
     }
     else
     {
@@ -153,15 +148,15 @@ bool loadConfig()
   if (fileContent.isEmpty())
     return false;
 
-  Serial.println(fileContent.c_str());
+  LOG(fileContent.c_str());
   JSONVar json = JSON.parse(fileContent);
   if (JSON.typeof(json) == "undefined")
   {
-    Serial.println("Parsing input failed!");
+    LOG_ERR("Parsing input failed!");
     return false;
   }
 
-  Serial.println("JSON parsed successfully.");
+  LOG("JSON parsed successfully.");
   if (json.hasOwnProperty("ssid") &&
       json.hasOwnProperty("pwd") &&
       json.hasOwnProperty("ws_ip") &&
@@ -173,16 +168,13 @@ bool loadConfig()
     ws_ip = (const char *)json["ws_ip"];
     ws_port = (unsigned int)json["ws_port"];
     ws_route = (const char *)json["ws_route"];
-    Serial.printf("SSID: %s", ssid.c_str());
-    Serial.printf("\t Password: %s\n", password.c_str());
-    Serial.printf("WebSocket IP: %s", ws_ip.c_str());
-    Serial.printf("\t WebSocket Port: %d", ws_port);
-    Serial.printf("\t WebSocket Route: %s\n", ws_route.c_str());
+    LOGF("SSID: %s\t Password: %s\n", ssid.c_str(), password.c_str());
+    LOGF("WebSocket IP: %s\t WebSocket Port: %d\t WebSocket Route: %s\n", ws_ip.c_str(), ws_port, ws_route.c_str());
     return true;
   }
   else
   {
-    Serial.println("Invalid configuration file format.");
+    LOG_ERR("Invalid configuration file format.");
     return false;
   }
 }
@@ -301,21 +293,21 @@ bool connect_to_network()
 {
   // Connect to WiFi network
   WiFi.begin(ssid.c_str(), password.c_str());
-  Serial.println("Connecting to WiFi...");
+  LOG("Connecting to WiFi...");
   unsigned long startAttemptTime = millis();
 
   while (WiFi.status() != WL_CONNECTED)
   {
     if (millis() - startAttemptTime > 10000) // 10 seconds timeout
     {
-      Serial.println("WiFi connection timed out...\nCheck your credentials...");
+      LOG_ERR("WiFi connection timed out...\nCheck your credentials...");
       return false;
     }
-    Serial.print(".");
+    LOGF(".");
     delay(500);
     yield(); // Allow other tasks to run
   }
-  Serial.printf("\nConnected to WiFi network. IP address: %s\n", WiFi.localIP().toString().c_str());
+  LOGF("\nConnected to WiFi network. IP address: %s\n", WiFi.localIP().toString().c_str());
   return true;
 }
 
@@ -372,7 +364,7 @@ void camera_init()
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK)
   {
-    Serial.printf("Camera init failed with error 0x%x", err);
+    LOGF_ERR("Camera init failed with error 0x%x", err);
     return;
   }
 
@@ -421,14 +413,14 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
   switch (type)
   {
   case WStype_DISCONNECTED:
-    Serial.printf("[WSc] Disconnected!\n");
+    LOG("[WSc] Disconnected!\n");
     break;
   case WStype_CONNECTED:
-    Serial.printf("[WSc] Connected to url: %s\n", payload);
+    LOGF("[WSc] Connected to url: %s\n", payload);
     webSocket.sendTXT("Connected");
     break;
   case WStype_TEXT:
-    Serial.printf("[WSc] get text: %s\n", payload);
+    LOGF("[WSc] get text: %s\n", payload);
     payload_json = JSON.parse((const char *)payload);
     if (JSON.typeof(payload_json) != "undefined")
     {
@@ -436,16 +428,16 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length)
     }
     break;
   case WStype_ERROR:
-    Serial.printf("[WSc] Error occurred!\n");
+    LOG("[WSc] Error occurred!\n");
     break;
   case WStype_PING:
-    Serial.printf("[WSc] Ping received!\n");
+    LOG("[WSc] Ping received!\n");
     break;
   case WStype_PONG:
-    Serial.printf("[WSc] Pong received!\n");
+    LOG("[WSc] Pong received!\n");
     break;
   default:
-    Serial.printf("[WSc] Unhandled event type: %d\n", type);
+    LOGF("[WSc] Unhandled event type: %d\n", type);
     break;
   }
 }
@@ -509,14 +501,8 @@ CMD_RESPONSE change_wifi(CMD_INPUT cmd_input)
 CMD_RESPONSE take_photo(CMD_INPUT cmd_input)
 {
   CMD_RESPONSE ret = {"OK", "Photo taken successfully"};
-#ifdef TEST_MODE
-  analogWrite(LED_GPIO_NUM, 100);
-  delay(500);
-#endif
   camera_fb_t *fb = esp_camera_fb_get();
-#ifdef TEST_MODE
-  analogWrite(LED_GPIO_NUM, 0);
-#endif
+
 
   if (!fb)
   {

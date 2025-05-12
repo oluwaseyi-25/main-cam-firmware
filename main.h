@@ -15,8 +15,11 @@
     Serial.println();    \
     Serial.println(msg); \
     Serial.flush();
+#define LOGF_ERR(...) \
+    Serial.printf(__VA_ARGS__);
 #else
 #define LOG_ERR(msg)
+#define LOGF_ERR(...)
 #endif
 
 // ==========================
